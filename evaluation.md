@@ -154,9 +154,9 @@ For more information, see [6].
 
 # References
 
-* [1] http://static.tobold.org/rc/rc-duff.html
-* [2] http://tobold.org/article/rc
-* [3] https://www.spinellis.gr/sw/dgsh/
-* [4] https://fishshell.com/docs/current/design.html
-* [5] https://en.wikipedia.org/wiki/Doge\_(meme)
-* [6] http://fishshell.com/
+* [1] (http://static.tobold.org/rc/rc-duff.html)
+* [2] (http://tobold.org/article/rc)
+* [3] (https://www.spinellis.gr/sw/dgsh/)
+* [4] (https://fishshell.com/docs/current/design.html)
+* [5] (https://en.wikipedia.org/wiki/Doge_(meme))
+* [6] (http://fishshell.com/)
