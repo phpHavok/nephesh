@@ -1,5 +1,7 @@
 # An evaluation of shells and their features
-*Author: Jacob Chappell*
+
+*Jacob Chappell*  
+*chappellind 0x40 gmail 0x2E com*
 
 With the advent of the operating system (OS), a mechanism was necessary by which
 a human operator could interface with and direct the operating system.  Thus was
@@ -51,8 +53,10 @@ In this section, we will design a shell from the ground up. We'll call this
 shell exsh for "example shell." Through a cycle of discerning what features we
 need and determining how and to what extent to implement those features, we will
 slowly build up a simple but useable shell. We will discuss both features in the
-abstract sense and syntactic considerations. For exsh, we will sometimes assume
-an arbitrary choice of syntax for the sake of example.
+abstract sense and syntactic considerations. For exsh, we will oftentimes assume
+an arbitrary choice of syntax for the sake of example. This arbitrary choice of
+syntax will be uncannily bash-like, for no other reason than to accommodate the
+majority of readers who are coming from a bash background (myself included).
 
 ### Command execution
 
@@ -150,8 +154,6 @@ as running `cp file.in file.out`.
 exsh> cat < file.in > file.out
 ```
 
-#### Arbitrary file redirection
-
 Shells differ somewhat in how they handle redirecting standard error. Some
 shells introduce another metacharacter (such as `^`). Other shells support
 overloading the `<` and `>` operators by specifying the file descriptor of the
@@ -186,6 +188,294 @@ saved into an `aggregate.log` file.
 ```
 exsh> grep -r test / > aggregate.log 2>&1
 ```
+
+### Pipelines
+
+The Unix philosophy includes a statement that can be roughly paraphrased as: a
+program should do one job, do only one job, and do that job well. Consequently,
+many Unix programs are designed with a specific task in mind. They expect their
+inputs to include the necessary data to perform only their task, and they expect
+their outputs to be used as inputs to other programs if further processing is
+necessary. For example, one may wish to list the files in a directory in
+lexicographical order which match a certain filter. In Unix, there are three
+programs which can together accomplish this task. `ls` lists the files in a
+directory, `grep` filters the list, and `sort` sorts the list (lexicographically
+or otherwise). Currently, accomplishing this task in exsh is possible but
+inconvenient.
+
+```
+exsh> ls > /tmp/ls.out
+exsh> grep filter < /tmp/ls.out > /tmp/grep.out
+exsh> sort < /tmp/grep.out
+```
+
+Notice how the `grep` command is really just a bridge between the `ls` and
+`sort` commands. This pattern is so common and paramount in Unix, that it
+deserves special consideration by shells. A shell which supports attaching the
+standard output of one program directly to the standard input of a second
+program is said to support a feature we'll call **pipelines**. As with file
+redirection, we'll say that a shell supports **arbitrary pipelines** if it
+permits establishing pipes between streams other than standard output and
+standard input.
+
+In most shells, the `|` metacharacter is used for creating pipelines. It is a
+fitting symbol given that it looks like a vertical pipe. Given a dedicated
+syntax for pipelines, the previous example would be much simpler and appear
+cleaner in exsh.
+
+```
+exsh> ls | grep filter | sort
+```
+
+Astute observation may, at this point, provoke thought on the similarities and
+differences between pipelines and file redirection. Both features revolve around
+redirecting file streams identified by file descriptors. Furthermore, the two
+features are often syntactically similar.
+
+```
+exsh> cat < file.in | sort > file.out
+```
+
+In the previous example, `file.in` is sorted and written to `file.out`. By shell
+convention, the command is listed first rather than the file. However, if we are
+to rearrange the example slightly, a striking resemblance emerges.
+
+```
+exsh> file.in > cat | sort > file.out
+```
+
+Now, it is perhaps more clear just how similar pipelines and file redirection
+are. Syntactically, the file redirection symbols indicate to the parser that the
+thing being redirected to or from should be treated as a file and *not* executed
+as a program. In the previous example, we were able to deprecate the `<`
+metacharacter in favor of moving the file to the left of the command. This
+creates a parsing ambiguity which can be resolved by realizing that the thing on
+the left of the first `>` symbol must be a file while the thing on the right of
+the last `>` symbol must be a file. The reader is encouraged to pause and think
+about why this must be the case.
+
+By introducing a separate syntax indicating whether or not a file should be
+executed as a command or not, a shell is able to provide a cleaner, uniform
+pipeline syntax. As an example, consider prefixing files which should *not* be
+executed with the `@` metacharacter.
+
+```
+exsh> @file.in | cat | sort | @file.out
+```
+
+Because a pipeline is a serial structure, one broken link effectively breaks the
+whole chain. Thus, all programs in a pipeline should be treated somehow as a
+unit. For example, if any of the programs in a pipeline are suspended (i.e.,
+with SIGSTOP), then *all* of the programs in that pipeline should be suspended.
+Fortunately, because Unix was designed with pipelines in mind, Unix provides a
+mechanism for easily accomplishing this: process groups. By creating a process
+group for each pipeline and assigning each program of the pipeline to that
+process group, one can effectively signal all of the associated programs as a
+unit.
+
+### Command substitution
+
+Occasionally, it is useful to use the output of a command or the contents of a
+file as an argument to a command. For example, consider trying to create a
+directory named after the current date in YYYY-MM-DD format. As it stands, this
+is not possible in exsh as a single command. To accomplish this, one would have
+to run the `date` command, copy the output, then run the `mkdir` command and
+paste the output of the date command.
+
+```
+exsh> date +%F
+2017-06-27
+exsh> mkdir 2017-06-27
+```
+
+Many shells allow one to accomplish this same task more automatically with a
+feature we'll call **command substitution**. In a programming language, one can
+effectively replace a variable's identifier with the contents of the variable.
+Similarly, command substitution effectively substitutes the output of a command
+in place of an argument to another command. Shells vary in the syntax they use
+to achieve command substitution. For example, bash uses `` `command` `` while
+fish uses `(command)`. Assuming bash's syntax, the previous example would be
+much simpler.
+
+```
+exsh> mkdir `date +%F`
+```
+
+It is worth noting that supporting nested command substitutions requires
+syntactic care (or significant parsing overhead). Later in this document, we
+will discuss how rc manages to cleverly avoid this problem.
+
+### Job control
+
+At this point in our development, exsh is said to execute all commands and
+pipelines in a foreground process group. A foreground process group in Unix is
+connected to a controlling terminal, which is usually the controlling terminal
+of the shell which launched the commands running in the foreground process
+group. Consequently, we can only run one pipeline at a time in a single shell
+session, because each pipeline will lock up the terminal until it completes.
+This is sometimes undesirable. For example, we may wish to search the entire
+file system for some string, which may take a long time. We'd like to be able
+to continue using our shell for other tasks while the search is ongoing. This
+can be accomplished in shells which support a feature we'll call **job
+control**.
+
+With job control, a shell allows a pipeline (or job) to be pushed into the
+background.  While in the background, a process group can continue executing,
+but it will no longer be attached to the controlling terminal. If the process
+group attempts to read from the terminal, it will block until it is restored to
+the foreground. The shell can provide a set of commands which allow moving
+processes to and from the background. In fact, multiple processes can be
+executing in the background simultaneously, but only one process group can be
+executing in the foreground at any given time. Shells with job control
+typically associate some kind of unique identifiers with jobs so that they can
+be more easily referenced by the user.
+
+### Globbing
+
+Oftentimes, users will need to run a command on a set of related files. For
+example, consider the task of archiving a bunch of PNG images.
+
+```
+exsh> tar -cf images.tar img1.png img2.png img3.png img4.png img5.png
+```
+
+For a small number of files, this isn't much of a problem. However, imaging
+trying to archive hundreds or thousands of files. Put simply, manually typing
+each filename doesn't scale. Many shells support methods of expanding a
+filename *pattern* into separate arguments. This feature is typically known as
+**globbing** or parameter expansion.
+
+Shells vary in the degree to which they implement globbing. In the simplest
+case, the most vital globbing pattern is the "put anything here" pattern, which
+is typically represented with a `*` metacharacter. As with any metacharacter,
+passing a literal `*` as an argument will require escaping it. With just this
+pattern, the previous example becomes feasible.
+
+```
+exsh> tar -cf *.png
+```
+
+Essentially, globbing is a form of (typically a very small subset of) regular
+expressions. A shell designer is free to implement globbing to any extent, but
+the previous example illustrates the most important pattern which is arguably
+vital to any decent shell.
+
+### Input modes
+
+Sometimes, the metacharacters of a shell's language can get in the way. As the
+language grows in size, it can become difficult for users to remember all of the
+metacharacters. This is motivation to keep the language as small as possible,
+but most shells also support some concept of **input modes** to ease the burden
+on users. For example, the space character is a metacharacter in exsh, but a
+user may wish to provide a single argument to a command which contains a lot of
+spaces. Presently, that would be annoying.
+
+```
+exsh> grep -r a\ \*really\*\ 'unique'\ string /
+```
+
+Not only is this very difficult to parse for a human reader, but it is
+error-prone. Input modes allow a user to toggle on or off different
+metacharacters in the language. Most shells typically provide at least a second
+input mode, different from the default mode, which disables *all* metacharacters
+except the character which toggles the mode. This toggling metacharacter is
+typically the single quote `'`. Using this mode, the previous example is much
+cleaner.
+
+```
+exsh> grep -r 'a *really* \'unique\' string' /
+```
+
+Notice that the *only* character that needs to be escaped to obtain its literal
+value is the `'` character used for toggling the mode. This is one (albeit a
+very important) example of input modes, but several others can exist. For
+example, command substitution can be thought of us an input mode. Thus,
+appending a string to the result of a command substitution might be allowed.
+
+```
+exsh> ping `hostname -s`.local
+```
+
+### Command line editing
+
+Perhaps the most important feature of interactive shells is a doozy: **command
+line editing**. This feature really encompasses a whole class of ideas. Command
+line editing is all about providing efficient ways for users to input, edit, and
+recall commands. For example, a user types out a long command and then realizes
+that he or she needs to edit something at the *beginning* of the command. A
+shell might provide a quick keyboard shortcut for jumping to the beginning of
+the command.
+
+One paramount feature of command line editing, without which a shell is doomed
+to fail, is tab completion. Tab completion allows a user to type part of a
+command or filename, press tab, and have the remainder of the command or
+filename automatically completed for them. Shell users are so dependant on this
+feature, that a modern shell simply cannot dismiss this and expect to succeed.
+Shells vary in the extent to which they implement tab completion. For example,
+some shells have programmable tab completion which can be tuned to a power
+user's delicate needs.
+
+Another feature of command line editing that users depend heavily upon is
+history. Users like to be able to quickly recall previous commands in order to
+execute them again, possibly with minor edits. Shells typically allow users to
+press the up arrow key in order to cycle through previously executed commands.
+Furthermore, some shells provide special syntax for performing convenient
+command substitution on previously executed commands. The extent to which
+history is implemented is up to the shell designer, of course.
+
+We have only discussed a couple of editing features, but the sky's the limit
+here. Modern shells can benefit heavily from innovation in the area of command
+line editing. While shells can choose to manually implement all of these
+features, libraries like GNU Readline exist for bootstrapping a lot of what we
+have discussed here. More daring shell developers can investigate ncurses or
+direct ANSI escape sequences.
+
+### Considerations for scripting
+
+Thus far, we have been primarily focused on designing a shell for interactive
+use. However, shells have long been used for batch processing as well. For batch
+processing, it is necessary to be able to execute the shell with a file
+containing a series of commands to execute. We refer to writing a file
+containing shell commands as scripting.
+
+Much of our existing work should trivially apply to scripting, but some
+features, such as job control, have no relevance in scripting. Furthermore, a
+shell which supports scripting typically needs some additional features. While
+not an exhaustive list, we will briefly discuss a couple of shell features that
+are important for scripting.
+
+First, we discuss variables. Variables provide a way for the user to store a
+string, array, the output of a command, or something else for later use. If
+variables are implemented, there must be a way for variables to be substituted
+for their contained values. This is similar to command substitution. Whether
+variables are string-valued, array-valued, or otherwise is a shell design
+decision that should be carefully considered. Shells which support arrays have
+other considerations, such as how to support array indexing. While variables can
+be useful for interactive use, they are typically vital for scripting.
+
+Next on the list, functions. Functions allow grouping a set of commands which
+tend to be repeated multiple times throughout a script. Typically, functions
+allow altering their run based upon parameters (just as commands have
+parameters). There is not a huge difference between commands and functions
+except that functions are much more convenient for users to write.
+
+Last, we mention flow control. Flow control provides a mechanism to repeat
+commands and conditionally execute or skip commands. Typical flow control
+constructs are `if`, `while`, `for`, and `switch`, which perform similar tasks
+as they do in typical programming languages. Most flow control is not very
+important for interactive use but vitally important for scripting.
+
+### Conclusion
+
+At this point, the reader should have a solid idea about how shells are designed
+and the decisions that shell designers are faced with. I'd like to formally note
+that we have only begun to scratch the surface here. A shell which implements
+the discussed features is useable and useful; however, a modern shell should
+implement interesting and useful features well beyond the accepted minimum
+discussed in this document. That being said, don't be afraid to jump in and
+start playing with shell design. Designing a shell is incredibly fun, exciting,
+challenging, and rewarding. So go out, conquer, and stop putting Bourne shell
+derivatives on a pedestal.
 
 ## Interesting features of exotic shells
 
