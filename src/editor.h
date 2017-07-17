@@ -18,12 +18,17 @@ typedef struct ed_t {
     char * buffer;
     unsigned int buffer_sz;
     unsigned int cursor_x;
-    unsigned int cursor_y;
+    //unsigned int cursor_y;
     kb_t * bindings;
     int editing;
+    int input;
+    int output;
+    char * prompt;
 } ed_t;
 
-void ed_init(ed_t * ed);
+void ed_init(ed_t * ed,
+             int input,
+             int output);
 const char * ed_readline(ed_t * ed);
 
 #endif

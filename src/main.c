@@ -39,7 +39,7 @@ int main(int argc, char * argv[])
     tcsetattr(STDIN_FILENO, TCSANOW, &nfsh_term_settings);
 
     ed_t ed;
-    ed_init(&ed);
+    ed_init(&ed, STDIN_FILENO, STDOUT_FILENO);
 
     printf("nephesh editing demo\n");
     printf("type 'exit' to quit\n");
