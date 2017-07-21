@@ -7,6 +7,7 @@
 #include <curses.h>
 #include <term.h>
 #include "editor.h"
+#include "scanner.h"
 
 int main(int argc, char * argv[])
 {
@@ -52,6 +53,14 @@ int main(int argc, char * argv[])
         if (0 == strcmp(line, "exit")) {
             break;
         }
+        scanner_t * scanner = scanner_new(line);
+        if (NULL == scanner) {
+            continue;
+        }
+        token_t * tokens = scanner_scan(scanner);
+        token_debug_dump(tokens);
+        // TODO: cleanup tokens
+        scanner_delete(scanner);
     }
 
     ed_delete(ed);
