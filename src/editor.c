@@ -149,11 +149,11 @@ static void _ed_reset(ed_t * ed)
     ed->line[0] = '\0';
     ed->cursor_pos = 0;
     ed->editing = 1;
-    const char * get_cursor = "\e[6n";
+    const char * get_cursor = "\x1b[6n";
     write(ed->output, get_cursor, strlen(get_cursor));
     char cursor_position[32];
     if (0 != read(ed->input, cursor_position, 32)) {
-        if (EOF == sscanf(cursor_position, "\e[%u;%u", &ed->offset_y, &ed->offset_x)) {
+        if (EOF == sscanf(cursor_position, "\x1b[%u;%u", &ed->offset_y, &ed->offset_x)) {
             ed->offset_x = 0;
             ed->offset_y = 0;
         } else {
