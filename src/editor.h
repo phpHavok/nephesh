@@ -1,8 +1,8 @@
 #ifndef EDITOR_H_
 #define EDITOR_H_
 
-#define ED_LINE_MAX_SIZE 10
-#define ED_BUFFER_MAX_SIZE 10
+#define ED_LINE_MAX_SIZE 4096
+#define ED_BUFFER_MAX_SIZE 32
 
 typedef struct ed_t ed_t;
 
