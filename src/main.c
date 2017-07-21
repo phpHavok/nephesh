@@ -41,8 +41,7 @@ int main(int argc, char * argv[])
 
     ed_t * ed = ed_new(STDIN_FILENO, STDOUT_FILENO);
 
-    printf("nephesh editing demo\n");
-    printf("type 'exit' to quit\n");
+    printf("Type 'exit' to quit.\n");
 
     while (1) {
         const char * line = ed_readline(ed);

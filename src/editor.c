@@ -93,7 +93,7 @@ ed_t * ed_new(int input,
     ed->input = input;
     ed->output = output;
     ed->key_bindings = _kb_load_bindings();
-    ed->prompt = "nephesh> ";
+    ed->prompt = "nephesh/\xd7\xa9\xd7\xa4\xd7\xa0> ";
     return ed;
 }
 
@@ -202,7 +202,7 @@ static void _ed_draw(ed_t * ed)
     write(ed->output, ed->prompt, strlen(ed->prompt));
     write(ed->output, ed->line, strlen(ed->line));
     const char * move_final = tparm(cursor_address, ed->offset_y, ed->offset_x +
-                                    strlen(ed->prompt) + ed->cursor_pos);
+                                    u8_strlen(ed->prompt) + ed->cursor_pos);
     write(ed->output, move_final, strlen(move_final));
 }
 
