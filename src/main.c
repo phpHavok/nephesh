@@ -38,22 +38,23 @@ int main(int argc, char * argv[])
     nfsh_term_settings.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &nfsh_term_settings);
 
-    ed_t ed;
-    ed_init(&ed, STDIN_FILENO, STDOUT_FILENO);
+    ed_t * ed = ed_new(STDIN_FILENO, STDOUT_FILENO);
 
     printf("nephesh editing demo\n");
     printf("type 'exit' to quit\n");
 
     while (1) {
-        const char * line = ed_readline(&ed);
+        const char * line = ed_readline(ed);
         if (NULL == line) {
             break;
         }
-        printf("Got line: %s\n", line);
+        printf("Got line: \"%s\"\n", line);
         if (0 == strcmp(line, "exit")) {
             break;
         }
     }
+
+    ed_delete(ed);
 
     // Restore terminal settings.
     tcsetattr(STDIN_FILENO, TCSANOW, &term_settings);

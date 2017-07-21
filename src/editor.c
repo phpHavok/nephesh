@@ -8,205 +8,315 @@
 #include <term.h>
 #include "utf8.h"
 
-static void kb_action_backspace(ed_t * ed)
+static void _ed_reset(ed_t * ed);
+static void _ed_draw(ed_t * ed);
+static void _ed_insert(ed_t * ed);
+static kb_t * _kb_load_bindings(void);
+static unsigned int _kb_reduce(ed_t * ed,
+                               kb_t ** potential_bindings);
+static kb_t * _kb_copy(const kb_t * first);
+
+/**
+ * Key binding actions.
+ */
+static void _kb_action_end_editing(ed_t * ed);
+static void _kb_action_cursor_right(ed_t * ed);
+static void _kb_action_cursor_left(ed_t * ed);
+static void _kb_action_cursor_bol(ed_t * ed);
+static void _kb_action_cursor_eol(ed_t * ed);
+static void _kb_action_backspace(ed_t * ed);
+static void _kb_nop(ed_t * ed);
+
+struct ed_t {
+    /**
+     * Vetting area for strings before they are considered a part of the line.
+     * Examples include partial UTF-8 characters and partial key binding
+     * sequences.
+     */
+    char * buffer;
+    /**
+     * A boolean indicating whether or not the buffer is being populated.
+     */
+    int buffering;
+    /**
+     * The size of the buffer.
+     */
+    size_t buffer_sz;
+    /**
+     * The editable line that is visible to the user. Should always be null
+     * terminated.
+     */
+    char * line;
+    /**
+     * The logical cursor position within the line. Multi-byte characters are
+     * treated as one cursor position. This must ultimately be translated into
+     * an (x,y) coordinate pair for display to the screen based upon the
+     * terminal's dimensions. Soft wrapping may apply.
+     */
+    unsigned int cursor_pos;
+    /**
+     * The terminal coordinates where we should begin editing.
+     */
+    unsigned int offset_x;
+    unsigned int offset_y;
+    /**
+     * A linked list of valid key bindings.
+     */
+    kb_t * key_bindings;
+    /**
+     * A boolean indicating whether or not the line is being edited.
+     */
+    int editing;
+    /**
+     * The file descriptor to expect user input on.
+     */
+    int input;
+    /**
+     * The file descriptor to display the user's line on.
+     */
+    int output;
+    /**
+     * The user's prompt, to be displayed before their editable line.
+     */
+    char * prompt;
+};
+
+ed_t * ed_new(int input,
+              int output)
 {
+    ed_t * ed = malloc(sizeof(ed_t));
+    memset(ed, 0, sizeof(ed_t));
+    ed->buffer = malloc(ED_BUFFER_MAX_SIZE);
+    ed->buffer[0] = '\0';
+    ed->line = malloc(ED_LINE_MAX_SIZE);
+    ed->line[0] = '\0';
+    ed->input = input;
+    ed->output = output;
+    ed->key_bindings = _kb_load_bindings();
+    ed->prompt = "nephesh> ";
+    return ed;
 }
 
-static void kb_action_enter(ed_t * ed)
+void ed_delete(ed_t * ed)
 {
-    ed->editing = 0;
+    free(ed->buffer);
+    free(ed->line);
+    free(ed);
 }
 
-static void kb_cursor_right(ed_t * ed)
+const char * ed_readline(ed_t * ed)
 {
-    if (ed->cursor_x < utf8_strlen(ed->buffer, ed->buffer_sz)) {
-        ed->cursor_x++;
+    _ed_reset(ed);
+    while (ed->editing) {
+        ed->buffering = 1;
+        ed->buffer_sz = 0;
+        kb_t * potential_bindings = _kb_copy(ed->key_bindings);
+        _ed_draw(ed);
+        while (ed->buffering) {
+            char u8_char[U8_MAX_BYTES];
+            size_t u8_char_sz = u8_getc(ed->input, u8_char);
+            if (0 == u8_char_sz) {
+                continue;
+            }
+            if (ed->buffer_sz + u8_char_sz >= ED_BUFFER_MAX_SIZE - 1) {
+                // Don't know what to do in this case. Just throw away the
+                // buffer and restart.
+                break;
+            }
+            // Copy character to buffer.
+            memcpy(ed->buffer + ed->buffer_sz, u8_char, u8_char_sz);
+            ed->buffer_sz += u8_char_sz;
+            // Try to match a key binding.
+            unsigned int potentials_sz = _kb_reduce(ed, &potential_bindings);
+            if (0 == potentials_sz) {
+                _ed_insert(ed);
+                ed->buffering = 0;
+            } else if (1 == potentials_sz &&
+                       strlen(potential_bindings->sequence) == ed->buffer_sz) {
+                potential_bindings->action(ed);
+                ed->buffering = 0;
+            }
+        }
+    }
+    write(ed->output, "\n", 1);
+    return ed->line;
+}
+
+static void _ed_reset(ed_t * ed)
+{
+    ed->buffer_sz = 0;
+    ed->buffering = 1;
+    ed->line[0] = '\0';
+    ed->cursor_pos = 0;
+    ed->editing = 1;
+    const char * get_cursor = "\e[6n";
+    write(ed->output, get_cursor, strlen(get_cursor));
+    char cursor_position[32];
+    if (0 != read(ed->input, cursor_position, 32)) {
+        if (EOF == sscanf(cursor_position, "\e[%u;%u", &ed->offset_y, &ed->offset_x)) {
+            ed->offset_x = 0;
+            ed->offset_y = 0;
+        } else {
+            // The offsets are 1-based, so we need to make them 0-based.
+            ed->offset_x--;
+            ed->offset_y--;
+        }
     }
 }
 
-static void kb_cursor_left(ed_t * ed)
+static void _ed_insert(ed_t * ed)
 {
-    if (ed->cursor_x > 0) {
-        ed->cursor_x--;
+    unsigned int len = strlen(ed->line);
+    if (len + ed->buffer_sz > ED_LINE_MAX_SIZE - 1) {
+        return;
     }
+    unsigned int index = u8_byte_offset(ed->line, ed->cursor_pos);
+    ed->line[len + ed->buffer_sz] = '\0';
+    for (unsigned int i = len + ed->buffer_sz; i > index; --i) {
+        ed->line[i - 1] = ed->line[i - 1 - ed->buffer_sz];
+    }
+    memcpy(ed->line + index, ed->buffer, ed->buffer_sz);
+    ed->cursor_pos += u8_strlen_b(ed->buffer, ed->buffer_sz);
 }
 
-static void kb_cursor_bol(ed_t * ed)
+static void _ed_delete(ed_t * ed)
 {
-    ed->cursor_x = 0;
+    unsigned int index = u8_byte_offset(ed->line, ed->cursor_pos);
+    if (index < 1) {
+        return;
+    }
+    unsigned int preindex = u8_byte_offset(ed->line, ed->cursor_pos - 1);
+    for (unsigned int i = index; i > preindex; --i) {
+        for (unsigned int j = i - 1; j < strlen(ed->line); ++j) {
+            ed->line[j] = ed->line[j + 1];
+        }
+    }
+    ed->cursor_pos--;
 }
 
-static void kb_cursor_eol(ed_t * ed)
+static void _ed_draw(ed_t * ed)
 {
-    ed->cursor_x = utf8_strlen(ed->buffer, ed->buffer_sz);
+    const char * move_beginning = tparm(cursor_address, ed->offset_y, ed->offset_x);
+    write(ed->output, move_beginning, strlen(move_beginning));
+    write(ed->output, clr_eol, strlen(clr_eol));
+    write(ed->output, ed->prompt, strlen(ed->prompt));
+    write(ed->output, ed->line, strlen(ed->line));
+    const char * move_final = tparm(cursor_address, ed->offset_y, ed->offset_x +
+                                    strlen(ed->prompt) + ed->cursor_pos);
+    write(ed->output, move_final, strlen(move_final));
 }
 
-static kb_t * kb_load_bindings(void)
+static unsigned int _kb_reduce(ed_t * ed,
+                               kb_t ** potential_bindings)
+{
+    kb_t * potential_binding, * temp;
+    LL_FOREACH_SAFE(*potential_bindings, potential_binding, temp) {
+        if (strlen(potential_binding->sequence) < ed->buffer_sz ||
+                   0 != strncmp(potential_binding->sequence, ed->buffer, ed->buffer_sz)) {
+            LL_DELETE(*potential_bindings, potential_binding);
+            free(potential_binding);
+        }
+    }
+    unsigned int potentials_sz = 0;
+    LL_COUNT(*potential_bindings, temp, potentials_sz);
+    return potentials_sz;
+}
+
+static kb_t * _kb_load_bindings(void)
 {
     kb_t * bindings = NULL;
     kb_t * temp = NULL;
 
     temp = malloc(sizeof(kb_t));
-    strncpy(temp->sequence, key_backspace, KB_SEQUENCE_MAX_SIZE);
-    temp->action = kb_action_backspace;
+    temp->sequence = "\n";
+    temp->action = _kb_action_end_editing;
     LL_PREPEND(bindings, temp);
 
     temp = malloc(sizeof(kb_t));
-    strncpy(temp->sequence, "\n", KB_SEQUENCE_MAX_SIZE);
-    temp->action = kb_action_enter;
+    temp->sequence = key_right;
+    temp->action = _kb_action_cursor_right;
     LL_PREPEND(bindings, temp);
 
     temp = malloc(sizeof(kb_t));
-    strncpy(temp->sequence, key_right, KB_SEQUENCE_MAX_SIZE);
-    temp->action = kb_cursor_right;
+    temp->sequence = key_left;
+    temp->action = _kb_action_cursor_left;
     LL_PREPEND(bindings, temp);
 
     temp = malloc(sizeof(kb_t));
-    strncpy(temp->sequence, key_left, KB_SEQUENCE_MAX_SIZE);
-    temp->action = kb_cursor_left;
+    temp->sequence = "\x01";
+    temp->action = _kb_action_cursor_bol;
     LL_PREPEND(bindings, temp);
 
     temp = malloc(sizeof(kb_t));
-    strncpy(temp->sequence, "\x1", KB_SEQUENCE_MAX_SIZE);
-    temp->action = kb_cursor_bol;
+    temp->sequence = "\x05";
+    temp->action = _kb_action_cursor_eol;
     LL_PREPEND(bindings, temp);
 
     temp = malloc(sizeof(kb_t));
-    strncpy(temp->sequence, "\x5", KB_SEQUENCE_MAX_SIZE);
-    temp->action = kb_cursor_eol;
+    temp->sequence = key_backspace;
+    temp->action = _kb_action_backspace;
+    LL_PREPEND(bindings, temp);
+
+    // TEMP
+    temp = malloc(sizeof(kb_t));
+    temp->sequence = "\xd7\xa2x";
+    temp->action = _kb_nop;
+    LL_PREPEND(bindings, temp);
+
+    temp = malloc(sizeof(kb_t));
+    temp->sequence = "\xd7\xa2\xd7\x91x";
+    temp->action = _kb_nop;
     LL_PREPEND(bindings, temp);
 
     return bindings;
 }
 
-void ed_init(ed_t * ed,
-             int input,
-             int output)
+static kb_t * _kb_copy(const kb_t * first)
 {
-    memset(ed, 0, sizeof(ed_t));
-    ed->buffer = malloc(ED_BUFFER_MAX_SIZE);
-    ed->input = input;
-    ed->output = output;
-    ed->bindings = kb_load_bindings();
-    const char * prompt = "nephesh> ";
-    ed->prompt = malloc(strlen(prompt) + 1);
-    strncpy(ed->prompt, prompt, strlen(prompt) + 1);
+    kb_t * new = NULL;
+    const kb_t * element = NULL;
+    LL_FOREACH(first, element) {
+        kb_t * temp = malloc(sizeof(kb_t));
+        memcpy(temp, element, sizeof(kb_t));
+        LL_PREPEND(new, temp);
+    }
+    return new;
 }
 
-static kb_t * kb_reduce(const char * sequence,
-                        unsigned int index,
-                        const kb_t * potentials)
+static void _kb_action_end_editing(ed_t * ed)
 {
-    kb_t * reduced = NULL;
-    const kb_t * potential = NULL;
-    LL_FOREACH(potentials, potential) {
-        if (sequence[index] == potential->sequence[index]) {
-            kb_t * potential_copy = malloc(sizeof(kb_t));
-            memcpy(potential_copy, potential, sizeof(kb_t));
-            LL_PREPEND(reduced, potential_copy);
-        }
-    }
-    return reduced;
+    ed->editing = 0;
 }
 
-static kb_t * kb_find_match(char * sequence,
-                            unsigned int sequence_max_sz,
-                            unsigned int * sequence_sz,
-                            ed_t * ed)
+static void _kb_action_cursor_right(ed_t * ed)
 {
-    kb_t * potentials = ed->bindings;
-    for (unsigned int i = 0; i < sequence_max_sz; ++i) {
-        read(ed->input, sequence + i, 1);
-        kb_t * reduced = kb_reduce(sequence, i, potentials);
-        if (potentials != ed->bindings) {
-            kb_t * potential;
-            kb_t * temp;
-            LL_FOREACH_SAFE(potentials, potential, temp) {
-                LL_DELETE(potentials, potential);
-                free(potential);
-            }
-        }
-        potentials = reduced;
-        unsigned int potentials_sz = 0;
-        kb_t * potential = NULL;
-        LL_COUNT(potentials, potential, potentials_sz);
-        if ((1 == potentials_sz && '\0' == potentials->sequence[i + 1]) || 0 == potentials_sz) {
-            *sequence_sz = i + 1;
-            break;
-        }
-    }
-    return potentials;
-}
-
-static void ed_refresh(ed_t * ed)
-{
-    // Move the cursor to the beginning of the line.
-    const char * cursor_start = tparm(column_address, 0);
-    write(ed->output, cursor_start, strlen(cursor_start));
-    // Clear the line.
-    write(ed->output, clr_eol, strlen(clr_eol));
-    // Print the prompt.
-    write(ed->output, ed->prompt, strlen(ed->prompt));
-    // Print the contents of the editing buffer.
-    write(ed->output, ed->buffer, ed->buffer_sz);
-    // Move the cursor to wherever the user has placed it.
-    unsigned int cursor_offset = strlen(ed->prompt)
-                                 //+ utf8_strlen(ed->buffer, ed->buffer_sz)
-                                 + ed->cursor_x;
-    const char * cursor_user = tparm(column_address, cursor_offset);
-    write(ed->output, cursor_user, strlen(cursor_user));
-}
-
-static void ed_insert(ed_t * ed,
-                      char * buffer,
-                      unsigned int buffer_sz)
-{
-    if (ed->buffer_sz + buffer_sz > ED_BUFFER_MAX_SIZE - 1) {
-        return;
-    }
-    unsigned int offset = utf8_offset(ed->buffer, ed->buffer_sz, ed->cursor_x);
-    if (ed->buffer_sz > 0) {
-        for (unsigned i = ed->buffer_sz - 1; i >= offset; --i) {
-            ed->buffer[i + buffer_sz] = ed->buffer[i];
-            // Necessary, because we are using unsigned.
-            if (0 == i) {
-                break;
-            }
-        }
-    }
-    for (unsigned i = 0; i < buffer_sz; ++i) {
-        //unsigned int offset = utf8_offset(ed->buffer, ed->cursor_x);
-        ed->buffer[offset + i] = buffer[i];
-        ed->buffer_sz++;
-        // Move cursor only once for UTF-8 characters.
-        if (0x80U != (0xC0U & buffer[i])) {
-            ed->cursor_x++;
-        }
+    if (ed->cursor_pos + 1 <= u8_strlen(ed->line)) {
+        ed->cursor_pos++;
     }
 }
 
-static void ed_reset(ed_t * ed)
+static void _kb_action_cursor_left(ed_t * ed)
 {
-    ed->buffer_sz = 0;
-    ed->editing = 1;
-    ed->cursor_x = 0;
+    if (ed->cursor_pos > 0) {
+        ed->cursor_pos--;
+    }
 }
 
-const char * ed_readline(ed_t * ed)
+static void _kb_action_cursor_bol(ed_t * ed)
 {
-    ed_reset(ed);
-    while (ed->editing) {
-        ed_refresh(ed);
-        char sequence[KB_SEQUENCE_MAX_SIZE];
-        unsigned int sequence_sz;
-        kb_t * key_binding = kb_find_match(sequence, KB_SEQUENCE_MAX_SIZE, &sequence_sz, ed);
-        if (NULL == key_binding) {
-            ed_insert(ed, sequence, sequence_sz);
-        } else {
-            key_binding->action(ed);
-        }
-    }
-    write(ed->output, "\n", 1);
-    ed->buffer[ed->buffer_sz] = '\0';
-    return ed->buffer;
+    ed->cursor_pos = 0;
+}
+
+static void _kb_action_cursor_eol(ed_t * ed)
+{
+    ed->cursor_pos = u8_strlen(ed->line);
+}
+
+static void _kb_action_backspace(ed_t * ed)
+{
+    _ed_delete(ed);
+}
+
+static void _kb_nop(ed_t * ed)
+{
 }
