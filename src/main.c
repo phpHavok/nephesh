@@ -6,6 +6,7 @@
 #include <locale.h>
 #include <curses.h>
 #include <term.h>
+#include <utlist.h>
 #include "editor.h"
 #include "scanner.h"
 #include "parser.h"
@@ -42,35 +43,44 @@ int main(int argc, char * argv[])
 
     ed_t * ed = ed_new(STDIN_FILENO, STDOUT_FILENO);
 
-    printf("Type 'exit' to quit.\n");
+    fprintf(stdout, "Type 'exit' to quit.\n");
+    fflush(stdout);
 
     while (1) {
         const char * line = ed_readline(ed);
-        if (NULL == line) {
-            break;
-        }
-        printf("Got line: \"%s\"\n", line);
-        if (0 == strcmp(line, "exit")) {
-            break;
-        }
-        scanner_t * scanner = scanner_new(line);
-        if (NULL == scanner) {
+        if (0 == strlen(line)) {
             continue;
+        } else if (0 == strcmp(line, "exit")) {
+            break;
+        } else {
+            scanner_t * scanner = scanner_new(line);
+            if (NULL == scanner) {
+                goto error0;
+            }
+            token_t * tokens = scanner_scan(scanner);
+            parser_t * parser = parser_new(tokens);
+            if (NULL == parser) {
+                goto error1;
+            }
+            if (!parser_parse(parser)) {
+                fprintf(stdout, "Parse error: %s\n", parser_get_error(parser));
+                fflush(stdout);
+                goto error2;
+            }
+            // TODO: work with parsed information
+        error2:
+                parser_delete(parser);
+        error1:
+                scanner_delete(scanner);
+                // Cleanup tokens.
+                token_t * tt1, * tt2;
+                DL_FOREACH_SAFE(tokens, tt1, tt2) {
+                    DL_DELETE(tokens, tt1);
+                    free(tt1);
+                }
+        error0:
+                continue;
         }
-        token_t * tokens = scanner_scan(scanner);
-        token_debug_dump(tokens);
-        parser_t * parser = parser_new(tokens);
-        if (NULL == parser) {
-            // TODO: cleanup tokens
-            continue;
-        }
-        if (!parser_parse(parser)) {
-            fprintf(stderr, "Parse error.\n");
-            fflush(stderr);
-        }
-        parser_delete(parser);
-        // TODO: cleanup tokens
-        scanner_delete(scanner);
     }
 
     ed_delete(ed);
