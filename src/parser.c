@@ -73,6 +73,8 @@ static int parser_match(parser_t * parser,
 static int parser_parse_pipeline(parser_t * parser)
 {
     if (parser_match(parser, TOKEN_TYPE_STR_LIT)) {
+        // Arguments.
+        while (parser_match(parser, TOKEN_TYPE_STR_LIT));
         if (parser_parse_pipe(parser)) {
             return parser_parse_pipeline(parser);
         } else {
