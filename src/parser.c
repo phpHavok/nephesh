@@ -32,7 +32,7 @@ void parser_delete(parser_t * parser)
 
 int parser_parse(parser_t * parser)
 {
-    return parser_parse_pipeline(parser);
+    return parser_parse_pipeline(parser) && (NULL == parser->token);
 }
 
 static token_t * parser_peek(parser_t * parser)
