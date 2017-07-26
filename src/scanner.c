@@ -4,18 +4,6 @@
 #include <utlist.h>
 #include "scanner.h"
 
-/*
-pipeline = path, [ ws, pipe, ws, pipeline ] ;
-path = utf8-no-ws, { utf8-no-ws } ;
-pipe = unary-pipe | n-ary-pipe ;
-unary-pipe = [ file-descriptor ], "|", [ file-descriptor ] ;
-n-ary-pipe = "<", unary-pipe, { ws, unary-pipe }, ">" ;
-file-descriptor = ( digit, { digit } ) | "@" ;
-digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
-ws = ( " " | "\t" ), [ ws ] ;
-utf8-no-ws = ? all utf-8 encoded characters except those defined by ws ? ;
-*/
-
 struct scanner_t {
     char * str;
     unsigned int index;

@@ -8,6 +8,7 @@
 #include <term.h>
 #include "editor.h"
 #include "scanner.h"
+#include "parser.h"
 
 int main(int argc, char * argv[])
 {
@@ -58,6 +59,16 @@ int main(int argc, char * argv[])
         }
         token_t * tokens = scanner_scan(scanner);
         token_debug_dump(tokens);
+        parser_t * parser = parser_new(tokens);
+        if (NULL == parser) {
+            // TODO: cleanup tokens
+            continue;
+        }
+        if (!parser_parse(parser)) {
+            fprintf(stderr, "Parse error.\n");
+            fflush(stderr);
+        }
+        parser_delete(parser);
         // TODO: cleanup tokens
         scanner_delete(scanner);
     }
