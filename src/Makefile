@@ -1,5 +1,5 @@
-HEADERS := editor.h utf8.h scanner.h parser.h
-OBJECTS := editor.o utf8.o scanner.o parser.o
+HEADERS := editor.h utf8.h scanner.h parser.h command.h
+OBJECTS := editor.o utf8.o scanner.o parser.o command.o
 TARGET := nephesh
 LDFLAGS := -lcurses
 CCFLAGS := -Wall

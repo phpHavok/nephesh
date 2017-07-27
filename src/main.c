@@ -11,6 +11,8 @@
 #include "scanner.h"
 #include "parser.h"
 
+static int nfsh_execute(command_t * commands);
+
 int main(int argc, char * argv[])
 {
     const char * locale = setlocale(LC_ALL, "");
@@ -62,12 +64,16 @@ int main(int argc, char * argv[])
             if (NULL == parser) {
                 goto error1;
             }
-            if (!parser_parse(parser)) {
+            command_t * commands = parser_parse(parser);
+            if (NULL == commands) {
                 fprintf(stdout, "Parse error: %s\n", parser_get_error(parser));
                 fflush(stdout);
                 goto error2;
             }
-            // TODO: work with parsed information
+            if (nfsh_execute(commands) < 0) {
+                fprintf(stdout, "Unable to execute one or more commands.\n");
+                fflush(stdout);
+            }
         error2:
                 parser_delete(parser);
         error1:
@@ -88,5 +94,11 @@ int main(int argc, char * argv[])
     // Restore terminal settings.
     tcsetattr(STDIN_FILENO, TCSANOW, &term_settings);
     
+    return 0;
+}
+
+static int nfsh_execute(command_t * commands)
+{
+    command_debug_dump(commands);
     return 0;
 }
