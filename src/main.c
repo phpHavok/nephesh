@@ -11,6 +11,8 @@
 #include "scanner.h"
 #include "parser.h"
 #include <wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 extern char **environ;
 
@@ -107,6 +109,7 @@ static int nfsh_execute_pipeline(command_t * commands)
 {
     command_t * command = NULL;
     command_t * command_prev = NULL;
+    int end_of_pipeline = 0;
     DL_FOREACH(commands, command) {
         command_prev = command->prev;
         // Create legitimate pipes. TODO: algorithm sucks
@@ -135,6 +138,11 @@ static int nfsh_execute_pipeline(command_t * commands)
             }
             // Output pipes.
             for (unsigned int i = 0; i < command->pipec; ++i) {
+                if (-1 == command->pipes[i][1]) {
+                    int open_file = open(command->next->argv[0], O_CREAT | O_WRONLY, 0644);
+                    dup2(open_file, command->pipes_legit[i][1]);
+                    end_of_pipeline = 1;
+                }
                 close(command->pipes_legit[i][0]);
                 dup2(command->pipes_legit[i][1], command->pipes[i][0]);
             }
@@ -147,6 +155,10 @@ static int nfsh_execute_pipeline(command_t * commands)
                 close(command_prev->pipes_legit[i][0]);
                 close(command_prev->pipes_legit[i][1]);
             }
+        }
+        // Reached the end.
+        if (end_of_pipeline) {
+            break;
         }
     }
     // Cleanup previous pipes (final run).
