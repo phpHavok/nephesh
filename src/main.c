@@ -75,7 +75,7 @@ int main(int argc, char * argv[])
                 fflush(stdout);
                 goto error2;
             }
-            command_debug_dump(commands);
+            //command_debug_dump(commands);
             tcsetattr(STDIN_FILENO, TCSANOW, &term_settings);
             if (nfsh_execute_pipeline(commands) < 0) {
                 fprintf(stdout, "Unable to execute one or more commands.\n");
