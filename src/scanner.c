@@ -21,8 +21,10 @@ static char scanner_advance(scanner_t * scanner);
  * Returns 1 and advances the stream by one byte if that byte matches the
  * supplied byte. Otherwise, returns 0 and does not advance the stream.
  */
+/*
 static int scanner_match(scanner_t * scanner,
                          char byte);
+*/
 void scanner_scan_integer(scanner_t * scanner,
                           token_t * token,
                           char first_byte);
@@ -191,6 +193,7 @@ static char scanner_advance(scanner_t * scanner)
     return next_byte;
 }
 
+/*
 static int scanner_match(scanner_t * scanner,
                          char byte)
 {
@@ -201,3 +204,4 @@ static int scanner_match(scanner_t * scanner,
         return 0;
     }
 }
+*/

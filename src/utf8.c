@@ -28,7 +28,6 @@ unsigned int u8_byte_offset(const char * str,
                             unsigned int n)
 {
     unsigned int offset = 0;
-    size_t limit = strlen(str);
     for (unsigned int u8_char = 0; u8_char < n; ++u8_char) {
         unsigned int num_ones = 0;
         for (num_ones = 0; 0x80u == (0x80u & (str[offset] << num_ones)); ++num_ones);

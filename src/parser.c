@@ -32,6 +32,7 @@ parser_t * parser_new(token_t * tokens)
     parser->token = tokens;
     parser->error = "";
     parser->commands = NULL;
+    return parser;
 }
 
 void parser_delete(parser_t * parser)

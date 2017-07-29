@@ -10,12 +10,15 @@
 #include "editor.h"
 #include "scanner.h"
 #include "parser.h"
+#include <wait.h>
 
-static int nfsh_execute(command_t * commands);
+extern char **environ;
+
+static int nfsh_execute_pipeline(command_t * commands);
 
 int main(int argc, char * argv[])
 {
-    const char * locale = setlocale(LC_ALL, "");
+    /*const char * locale = */setlocale(LC_ALL, "");
 
     // TODO: verify that locale is UTF-8.
 
@@ -70,10 +73,12 @@ int main(int argc, char * argv[])
                 fflush(stdout);
                 goto error2;
             }
-            if (nfsh_execute(commands) < 0) {
+            tcsetattr(STDIN_FILENO, TCSANOW, &term_settings);
+            if (nfsh_execute_pipeline(commands) < 0) {
                 fprintf(stdout, "Unable to execute one or more commands.\n");
                 fflush(stdout);
             }
+            tcsetattr(STDIN_FILENO, TCSANOW, &nfsh_term_settings);
         error2:
                 parser_delete(parser);
         error1:
@@ -97,8 +102,48 @@ int main(int argc, char * argv[])
     return 0;
 }
 
-static int nfsh_execute(command_t * commands)
+static int nfsh_execute_pipeline(command_t * commands)
 {
-    command_debug_dump(commands);
+    command_t * command = NULL;
+    command_t * command_prev = NULL;
+    DL_FOREACH(commands, command) {
+        command_prev = command->prev;
+        // Create legitimate pipes.
+        for (unsigned int i = 0; i < command->pipec; ++i) {
+            pipe(command->pipes_legit[i]);
+        }
+        if (0 == fork()) {
+            // Input pipes.
+            if (NULL != command_prev) {
+                for (unsigned int i = 0; i < command_prev->pipec; ++i) {
+                    close(command_prev->pipes_legit[i][1]);
+                    dup2(command_prev->pipes_legit[i][0], command_prev->pipes[i][1]);
+                }
+            }
+            // Output pipes.
+            for (unsigned int i = 0; i < command->pipec; ++i) {
+                close(command->pipes_legit[i][0]);
+                dup2(command->pipes_legit[i][1], command->pipes[i][0]);
+            }
+            execvpe(command->argv[0], command->argv, environ);
+            exit(1);
+        }
+        // Cleanup previous pipes.
+        if (NULL != command_prev) {
+            for (unsigned int i = 0; i < command_prev->pipec; ++i) {
+                close(command_prev->pipes_legit[i][0]);
+                close(command_prev->pipes_legit[i][1]);
+            }
+        }
+    }
+    // Cleanup previous pipes (final run).
+    if (NULL != command_prev) {
+        for (unsigned int i = 0; i < command_prev->pipec; ++i) {
+            close(command_prev->pipes_legit[i][0]);
+            close(command_prev->pipes_legit[i][1]);
+        }
+    }
+    // Wait for children.
+    while (wait(NULL) > 0);
     return 0;
 }

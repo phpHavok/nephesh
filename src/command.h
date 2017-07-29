@@ -9,6 +9,7 @@ typedef struct command_t {
     unsigned int argc;
     int pipes[COMMAND_MAX_PIPES][2];
     unsigned int pipec;
+    int pipes_legit[COMMAND_MAX_PIPES][2];
     struct command_t * prev;
     struct command_t * next;
 } command_t;
