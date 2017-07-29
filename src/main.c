@@ -73,6 +73,7 @@ int main(int argc, char * argv[])
                 fflush(stdout);
                 goto error2;
             }
+            command_debug_dump(commands);
             tcsetattr(STDIN_FILENO, TCSANOW, &term_settings);
             if (nfsh_execute_pipeline(commands) < 0) {
                 fprintf(stdout, "Unable to execute one or more commands.\n");
@@ -108,9 +109,21 @@ static int nfsh_execute_pipeline(command_t * commands)
     command_t * command_prev = NULL;
     DL_FOREACH(commands, command) {
         command_prev = command->prev;
-        // Create legitimate pipes.
+        // Create legitimate pipes. TODO: algorithm sucks
         for (unsigned int i = 0; i < command->pipec; ++i) {
-            pipe(command->pipes_legit[i]);
+            unsigned int found = 0;
+            for (unsigned int j = 0; j < command->pipec; ++j) {
+                if (command->pipes[j][1] == command->pipes[i][1]) {
+                    found = j;
+                    break;
+                }
+            }
+            if (found < i) {
+                command->pipes_legit[i][0] = command->pipes_legit[found][0];
+                command->pipes_legit[i][1] = command->pipes_legit[found][1];
+            } else {
+                pipe(command->pipes_legit[i]);
+            }
         }
         if (0 == fork()) {
             // Input pipes.
