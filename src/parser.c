@@ -123,7 +123,7 @@ static int parser_parse_str_more(parser_t * parser)
 static int parser_parse_pipeline_more(parser_t * parser)
 {
     token_t * backtrack = parser->token;
-    // <pipe>
+    // <nary-pipe>
     if (parser_parse_nary_pipe(parser)) {
         // <pipeline>
         if (parser_parse_pipeline(parser)) {
