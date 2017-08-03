@@ -156,6 +156,7 @@ static int parser_parse_unary_pipe(parser_t * parser)
         parser->error = "Expected possible file descriptor.";
         return 0;
     }
+    parser->command->pipes[parser->command->pipec][0] = (-2 == parser->fd) ? 1 : parser->fd;
     // PIPE
     if (!parser_match(parser, TOKEN_TYPE_PIPE)) {
         parser->token = backtrack;
@@ -168,6 +169,7 @@ static int parser_parse_unary_pipe(parser_t * parser)
         parser->error = "Expected possible file descriptor.";
         return 0;
     }
+    parser->command->pipes[parser->command->pipec][1] = (-2 == parser->fd) ? 0 : parser->fd;
     return 1;
 }
 
@@ -204,6 +206,7 @@ static int parser_parse_nary_pipe(parser_t * parser)
 static int parser_parse_nary_pipe_more(parser_t * parser)
 {
     token_t * backtrack = parser->token;
+    parser->command->pipec++;
     // <unary-pipe>
     if (parser_parse_unary_pipe(parser)) {
         // <nary-pipe-more>
@@ -218,14 +221,18 @@ static int parser_parse_nary_pipe_more(parser_t * parser)
 
 static int parser_parse_maybe_fd(parser_t * parser)
 {
+    token_t * backtrack = parser->token;
     // STR
     if (parser_match(parser, TOKEN_TYPE_STR)) {
+        parser->fd = atoi(backtrack->aux);
         return 1;
     }
     // AT
     if (parser_match(parser, TOKEN_TYPE_AT)) {
+        parser->fd = -1;
         return 1;
     }
+    parser->fd = -2;
     // LAMBDA
     return 1;
 }
