@@ -25,12 +25,11 @@ static char scanner_advance(scanner_t * scanner);
 static int scanner_match(scanner_t * scanner,
                          char byte);
 */
-void scanner_scan_integer(scanner_t * scanner,
-                          token_t * token,
-                          char first_byte);
-void scanner_scan_string(scanner_t * scanner,
-                         token_t * token,
-                         char first_byte);
+static void scanner_scan_string(scanner_t * scanner,
+                                token_t * token,
+                                char first_byte);
+static void scanner_scan_string_quoted(scanner_t * scanner,
+                                       token_t * token);
 
 scanner_t * scanner_new(const char * str)
 {
@@ -87,22 +86,13 @@ token_t * scanner_scan(scanner_t * scanner)
                 DL_APPEND(tokens, next_token);
                 break;
 
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
-            case '9':
-                scanner_scan_integer(scanner, next_token, next_byte);
-                DL_APPEND(tokens, next_token);
-                break;
-
             case ' ':
             case '\t':
+                break;
+
+            case '\'':
+                scanner_scan_string_quoted(scanner, next_token);
+                DL_APPEND(tokens, next_token);
                 break;
 
             default:
@@ -121,19 +111,25 @@ void token_debug_dump(token_t * tokens)
     }
 }
 
-void scanner_scan_string(scanner_t * scanner,
-                         token_t * token,
-                         char first_byte)
+static void scanner_scan_string(scanner_t * scanner,
+                                token_t * token,
+                                char first_byte)
 {
-    token->type = TOKEN_TYPE_STR_LIT;
+    token->type = TOKEN_TYPE_STR;
     token->aux[0] = first_byte;
     unsigned int i;
     int keep_scanning = 1;
     for (i = 1; i < TOKEN_MAX_SIZE - 1 && keep_scanning; ++i) {
         char next_byte = scanner_peek(scanner);
         switch (next_byte) {
+            case '\0':
+            case '<':
+            case '>':
+            case '|':
+            case '@':
             case ' ':
             case '\t':
+            case '\'':
                 keep_scanning = 0;
                 break;
 
@@ -146,37 +142,27 @@ void scanner_scan_string(scanner_t * scanner,
     token->aux[i - 1] = '\0';
 }
 
-void scanner_scan_integer(scanner_t * scanner,
-                          token_t * token,
-                          char first_byte)
+static void scanner_scan_string_quoted(scanner_t * scanner,
+                                       token_t * token)
 {
-    token->type = TOKEN_TYPE_INT_LIT;
-    token->aux[0] = first_byte;
+    token->type = TOKEN_TYPE_STR;
     unsigned int i;
     int keep_scanning = 1;
-    for (i = 1; i < TOKEN_MAX_SIZE - 1 && keep_scanning; ++i) {
+    for (i = 0; i < TOKEN_MAX_SIZE - 1 && keep_scanning; ++i) {
         char next_byte = scanner_peek(scanner);
         switch (next_byte) {
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
-            case '9':
+            case '\'':
                 scanner_advance(scanner);
-                token->aux[i] = next_byte;
+                keep_scanning = 0;
                 break;
 
             default:
-                keep_scanning = 0;
+                scanner_advance(scanner);
+                token->aux[i] = next_byte;
                 break;
         }
     }
-    token->aux[i - 1] = '\0';
+    token->aux[i] = '\0';
 }
 
 static char scanner_peek(scanner_t * scanner)

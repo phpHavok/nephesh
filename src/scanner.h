@@ -8,8 +8,7 @@ typedef enum token_type_t {
     TOKEN_TYPE_GT,
     TOKEN_TYPE_PIPE,
     TOKEN_TYPE_AT,
-    TOKEN_TYPE_INT_LIT,
-    TOKEN_TYPE_STR_LIT
+    TOKEN_TYPE_STR
 } token_type_t;
 
 typedef struct token_t {
