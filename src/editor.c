@@ -117,6 +117,11 @@ const char * ed_readline(ed_t * ed)
             size_t u8_char_sz = u8_getc(ed->input, u8_char);
             if (0 == u8_char_sz) {
                 continue;
+            } else if (1 == u8_char_sz) {
+                unsigned int target = (unsigned int) u8_char[0];
+                if (target < 0x0AU || (target > 0x0AU && target <= 0x1FU) || 0x7FU == target) {
+                    continue;
+                }
             }
             if (ed->buffer_sz + u8_char_sz >= ED_BUFFER_MAX_SIZE - 1) {
                 // Don't know what to do in this case. Just throw away the
