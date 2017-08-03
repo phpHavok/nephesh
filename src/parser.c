@@ -13,12 +13,13 @@ struct parser_t {
 };
 
 static int parser_parse_pipeline(parser_t * parser);
-static int parser_parse_command(parser_t * parser);
-static int parser_parse_argument(parser_t * parser);
+static int parser_parse_str_more(parser_t * parser);
+static int parser_parse_pipeline_more(parser_t * parser);
 static int parser_parse_pipe(parser_t * parser);
 static int parser_parse_unary_pipe(parser_t * parser);
 static int parser_parse_nary_pipe(parser_t * parser);
-static int parser_parse_file_descriptor(parser_t * parser);
+static int parser_parse_nary_pipe_more(parser_t * parser);
+static int parser_parse_maybe_str(parser_t * parser);
 
 static token_t * parser_peek(parser_t * parser);
 static token_t * parser_advance(parser_t * parser);
@@ -89,130 +90,147 @@ static int parser_match(parser_t * parser,
 
 static int parser_parse_pipeline(parser_t * parser)
 {
-    if (parser_parse_command(parser)) {
-        // Arguments.
-        while (parser_parse_argument(parser));
-        if (parser_parse_pipe(parser)) {
-            return parser_parse_pipeline(parser);
-        } else {
+    token_t * backtrack = parser->token;
+    // STR
+    if (!parser_match(parser, TOKEN_TYPE_STR)) {
+        parser->token = backtrack;
+        return 0;
+    }
+    // <str-more>
+    if (!parser_parse_str_more(parser)) {
+        parser->token = backtrack;
+        return 0;
+    }
+    // <pipeline-more>
+    if (!parser_parse_pipeline_more(parser)) {
+        parser->token = backtrack;
+        return 0;
+    }
+    return 1;
+}
+
+static int parser_parse_str_more(parser_t * parser)
+{
+    // STR
+    if (parser_match(parser, TOKEN_TYPE_STR)) {
+        // <str-more>
+        return parser_parse_str_more(parser);
+    } else {
+        // LAMBDA
+        return 1;
+    }
+}
+
+static int parser_parse_pipeline_more(parser_t * parser)
+{
+    token_t * backtrack = parser->token;
+    // <pipe>
+    if (parser_parse_pipe(parser)) {
+        // <pipeline>
+        if (parser_parse_pipeline(parser)) {
             return 1;
         }
-    } else {
-        parser->error = "Missing command.";
-        return 0;
     }
-}
-
-static int parser_parse_command(parser_t * parser)
-{
-    token_t * lookahead = parser_peek(parser);
-    if (NULL == lookahead) {
-        return 0;
-    } else if (TOKEN_TYPE_STR_LIT == lookahead->type) {
-        parser_advance(parser);
-        command_t * command = command_new();
-        command->argv[0] = lookahead->aux;
-        command->argv[1] = NULL;
-        command->argc = 1;
-        DL_APPEND(parser->commands, command);
-        parser->command = command;
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
-static int parser_parse_argument(parser_t * parser)
-{
-    token_t * lookahead = parser_peek(parser);
-    if (NULL == lookahead) {
-        return 0;
-    } else if (TOKEN_TYPE_STR_LIT == lookahead->type) {
-        parser_advance(parser);
-        command_t * command = parser->command;
-        if (command->argc + 1 >= COMMAND_MAX_ARGS) {
-            parser->error = "Out of arguments.";
-            return 0;
-        }
-        command->argv[command->argc] = lookahead->aux;
-        command->argv[command->argc + 1] = NULL;
-        command->argc++;
-        return 1;
-    } else {
-        return 0;
-    }
+    parser->token = backtrack;
+    // LAMBDA
+    return 1;
 }
 
 static int parser_parse_pipe(parser_t * parser)
 {
-    if (parser_parse_unary_pipe(parser)) {
-        return 1;
-    } else if (parser_parse_nary_pipe(parser)) {
-        return 1;
-    } else {
-        parser->error = "Missing pipe(s)."; 
+    token_t * backtrack = parser->token;
+    token_t * lookahead = parser_peek(parser);
+    if (NULL == lookahead) {
         return 0;
+    }
+    switch (lookahead->type) {
+        // <unary-pipe>
+        case TOKEN_TYPE_STR:
+        case TOKEN_TYPE_PIPE:
+            if (parser_parse_unary_pipe(parser)) {
+                return 1;
+            } else {
+                parser->token = backtrack;
+                return 0;
+            }
+        // <nary-pipe>
+        case TOKEN_TYPE_LT:
+            if (parser_parse_nary_pipe(parser)) {
+                return 1;
+            } else {
+                parser->token = backtrack;
+                return 0;
+            }
+        default:
+            return 0;
     }
 }
 
 static int parser_parse_unary_pipe(parser_t * parser)
 {
-    int pipe[2] = { 1, 0 };
-    if (parser_parse_file_descriptor(parser)) {
-        pipe[0] = parser->fd;
+    token_t * backtrack = parser->token;
+    // <maybe-str>
+    if (!parser_parse_maybe_str(parser)) {
+        parser->token = backtrack;
+        return 0;
     }
+    // PIPE
     if (!parser_match(parser, TOKEN_TYPE_PIPE)) {
-        parser->error = "Missing '|'.";
+        parser->token = backtrack;
         return 0;
     }
-    if (parser_parse_file_descriptor(parser)) {
-        pipe[1] = parser->fd;
-    }
-    command_t * command = parser->command;
-    if (command->pipec + 1 >= COMMAND_MAX_PIPES) {
-        parser->error = "Out of pipes.";
+    // <maybe-str>
+    if (!parser_parse_maybe_str(parser)) {
+        parser->token = backtrack;
         return 0;
     }
-    command->pipes[command->pipec][0] = pipe[0];
-    command->pipes[command->pipec][1] = pipe[1];
-    command->pipec++;
     return 1;
 }
 
 static int parser_parse_nary_pipe(parser_t * parser)
 {
+    token_t * backtrack = parser->token;
+    // LT
     if (!parser_match(parser, TOKEN_TYPE_LT)) {
-        parser->error = "Missing '<'.";
+        parser->token = backtrack;
         return 0;
     }
+    // <unary-pipe>
     if (!parser_parse_unary_pipe(parser)) {
-        parser->error = "Missing pipe.";
+        parser->token = backtrack;
         return 0;
     }
-    while (parser_parse_unary_pipe(parser));
+    // <nary-pipe-more>
+    if (!parser_parse_nary_pipe_more(parser)) {
+        parser->token = backtrack;
+        return 0;
+    }
+    // GT
     if (!parser_match(parser, TOKEN_TYPE_GT)) {
-        parser->error = "Missing '>'.";
+        parser->token = backtrack;
         return 0;
     }
     return 1;
 }
 
-static int parser_parse_file_descriptor(parser_t * parser)
+static int parser_parse_nary_pipe_more(parser_t * parser)
 {
-    token_t * lookahead = parser_peek(parser);
-    if (NULL == lookahead) {
-        parser->error = "Missing file descriptor.";
-        return 0;
-    } else if (TOKEN_TYPE_INT_LIT == lookahead->type) {
-        parser_advance(parser);
-        parser->fd = atoi(lookahead->aux);
-        return 1;
-    } else if (TOKEN_TYPE_AT == lookahead->type) {
-        parser_advance(parser);
-        parser->fd = -1;
-        return 1;
-    } else {
-        parser->error = "Missing file descriptor.";
-        return 0;
+    token_t * backtrack = parser->token;
+    // <unary-pipe>
+    if (parser_parse_unary_pipe(parser)) {
+        // <nary-pipe-more>
+        if (parser_parse_nary_pipe_more(parser)) {
+            return 1;
+        }
     }
+    parser->token = backtrack;
+    // LAMBDA
+    return 1;
+}
+
+static int parser_parse_maybe_str(parser_t * parser)
+{
+    // STR or LAMBDA
+    parser_match(parser, TOKEN_TYPE_STR);
+    return 1;
 }
