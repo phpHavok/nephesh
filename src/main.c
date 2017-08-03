@@ -77,14 +77,12 @@ int main(int argc, char * argv[])
                 fflush(stdout);
                 goto error2;
             }
-            /*
             tcsetattr(STDIN_FILENO, TCSANOW, &term_settings);
             if (nfsh_execute_pipeline(commands) < 0) {
                 fprintf(stdout, "Unable to execute one or more commands.\n");
                 fflush(stdout);
             }
             tcsetattr(STDIN_FILENO, TCSANOW, &nfsh_term_settings);
-            */
         error2:
                 parser_delete(parser);
         error1:
@@ -108,7 +106,6 @@ int main(int argc, char * argv[])
     return 0;
 }
 
-/*
 static int nfsh_execute_pipeline(command_t * commands)
 {
     command_t * command = NULL;
@@ -176,4 +173,3 @@ static int nfsh_execute_pipeline(command_t * commands)
     while (wait(NULL) > 0);
     return 0;
 }
-*/
