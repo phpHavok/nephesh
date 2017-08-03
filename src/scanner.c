@@ -162,7 +162,7 @@ static void scanner_scan_string_quoted(scanner_t * scanner,
                 break;
         }
     }
-    token->aux[i] = '\0';
+    token->aux[i - 1] = '\0';
 }
 
 static char scanner_peek(scanner_t * scanner)
