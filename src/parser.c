@@ -95,6 +95,7 @@ static int parser_parse_pipeline(parser_t * parser)
     if (!parser_match(parser, TOKEN_TYPE_STR)) {
         parser->token = backtrack;
         parser->error = "Expected command or file.";
+        command_delete(parser->command);
         return 0;
     }
     parser->command->argv[0] = backtrack->aux;
@@ -103,6 +104,7 @@ static int parser_parse_pipeline(parser_t * parser)
     if (!parser_parse_str_more(parser)) {
         parser->token = backtrack;
         parser->error = "Expected command arguments.";
+        command_delete(parser->command);
         return 0;
     }
     DL_APPEND(parser->commands, parser->command);
