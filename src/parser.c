@@ -15,11 +15,10 @@ struct parser_t {
 static int parser_parse_pipeline(parser_t * parser);
 static int parser_parse_str_more(parser_t * parser);
 static int parser_parse_pipeline_more(parser_t * parser);
-static int parser_parse_pipe(parser_t * parser);
 static int parser_parse_unary_pipe(parser_t * parser);
 static int parser_parse_nary_pipe(parser_t * parser);
 static int parser_parse_nary_pipe_more(parser_t * parser);
-static int parser_parse_maybe_str(parser_t * parser);
+static int parser_parse_maybe_fd(parser_t * parser);
 
 static token_t * parser_peek(parser_t * parser);
 static token_t * parser_advance(parser_t * parser);
@@ -125,7 +124,7 @@ static int parser_parse_pipeline_more(parser_t * parser)
 {
     token_t * backtrack = parser->token;
     // <pipe>
-    if (parser_parse_pipe(parser)) {
+    if (parser_parse_nary_pipe(parser)) {
         // <pipeline>
         if (parser_parse_pipeline(parser)) {
             return 1;
@@ -136,41 +135,11 @@ static int parser_parse_pipeline_more(parser_t * parser)
     return 1;
 }
 
-static int parser_parse_pipe(parser_t * parser)
-{
-    token_t * backtrack = parser->token;
-    token_t * lookahead = parser_peek(parser);
-    if (NULL == lookahead) {
-        return 0;
-    }
-    switch (lookahead->type) {
-        // <unary-pipe>
-        case TOKEN_TYPE_STR:
-        case TOKEN_TYPE_PIPE:
-            if (parser_parse_unary_pipe(parser)) {
-                return 1;
-            } else {
-                parser->token = backtrack;
-                return 0;
-            }
-        // <nary-pipe>
-        case TOKEN_TYPE_LT:
-            if (parser_parse_nary_pipe(parser)) {
-                return 1;
-            } else {
-                parser->token = backtrack;
-                return 0;
-            }
-        default:
-            return 0;
-    }
-}
-
 static int parser_parse_unary_pipe(parser_t * parser)
 {
     token_t * backtrack = parser->token;
-    // <maybe-str>
-    if (!parser_parse_maybe_str(parser)) {
+    // <maybe-fd>
+    if (!parser_parse_maybe_fd(parser)) {
         parser->token = backtrack;
         return 0;
     }
@@ -179,8 +148,8 @@ static int parser_parse_unary_pipe(parser_t * parser)
         parser->token = backtrack;
         return 0;
     }
-    // <maybe-str>
-    if (!parser_parse_maybe_str(parser)) {
+    // <maybe-fd>
+    if (!parser_parse_maybe_fd(parser)) {
         parser->token = backtrack;
         return 0;
     }
@@ -228,9 +197,16 @@ static int parser_parse_nary_pipe_more(parser_t * parser)
     return 1;
 }
 
-static int parser_parse_maybe_str(parser_t * parser)
+static int parser_parse_maybe_fd(parser_t * parser)
 {
-    // STR or LAMBDA
-    parser_match(parser, TOKEN_TYPE_STR);
+    // STR
+    if (parser_match(parser, TOKEN_TYPE_STR)) {
+        return 1;
+    }
+    // AT
+    if (parser_match(parser, TOKEN_TYPE_AT)) {
+        return 1;
+    }
+    // LAMBDA
     return 1;
 }
