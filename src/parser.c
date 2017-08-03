@@ -99,7 +99,8 @@ static int parser_parse_pipeline(parser_t * parser)
         return 0;
     }
     parser->command->argv[0] = backtrack->aux;
-    parser->command->argc++;
+    parser->command->argv[1] = NULL;
+    parser->command->argc = 1;
     // <str-more>
     if (!parser_parse_str_more(parser)) {
         parser->token = backtrack;
@@ -124,6 +125,7 @@ static int parser_parse_str_more(parser_t * parser)
     if (parser_match(parser, TOKEN_TYPE_STR)) {
         parser->command->argv[parser->command->argc] = backtrack->aux;
         parser->command->argc++;
+        parser->command->argv[parser->command->argc] = NULL;
         // <str-more>
         return parser_parse_str_more(parser);
     } else {
