@@ -65,23 +65,26 @@ int main(int argc, char * argv[])
                 goto error0;
             }
             token_t * tokens = scanner_scan(scanner);
+            token_debug_dump(tokens);
             parser_t * parser = parser_new(tokens);
             if (NULL == parser) {
                 goto error1;
             }
             command_t * commands = parser_parse(parser);
+            command_debug_dump(commands);
             if (NULL == commands) {
                 fprintf(stdout, "Parse error: %s\n", parser_get_error(parser));
                 fflush(stdout);
                 goto error2;
             }
-            //command_debug_dump(commands);
+            /*
             tcsetattr(STDIN_FILENO, TCSANOW, &term_settings);
             if (nfsh_execute_pipeline(commands) < 0) {
                 fprintf(stdout, "Unable to execute one or more commands.\n");
                 fflush(stdout);
             }
             tcsetattr(STDIN_FILENO, TCSANOW, &nfsh_term_settings);
+            */
         error2:
                 parser_delete(parser);
         error1:
@@ -105,6 +108,7 @@ int main(int argc, char * argv[])
     return 0;
 }
 
+/*
 static int nfsh_execute_pipeline(command_t * commands)
 {
     command_t * command = NULL;
@@ -172,3 +176,4 @@ static int nfsh_execute_pipeline(command_t * commands)
     while (wait(NULL) > 0);
     return 0;
 }
+*/

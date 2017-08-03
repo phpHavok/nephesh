@@ -90,19 +90,26 @@ static int parser_match(parser_t * parser,
 static int parser_parse_pipeline(parser_t * parser)
 {
     token_t * backtrack = parser->token;
+    parser->command = command_new();
     // STR
     if (!parser_match(parser, TOKEN_TYPE_STR)) {
         parser->token = backtrack;
+        parser->error = "Expected command or file.";
         return 0;
     }
+    parser->command->argv[0] = backtrack->aux;
+    parser->command->argc++;
     // <str-more>
     if (!parser_parse_str_more(parser)) {
         parser->token = backtrack;
+        parser->error = "Expected command arguments.";
         return 0;
     }
+    DL_APPEND(parser->commands, parser->command);
     // <pipeline-more>
     if (!parser_parse_pipeline_more(parser)) {
         parser->token = backtrack;
+        parser->error = "Expected a continued pipeline.";
         return 0;
     }
     return 1;
@@ -110,8 +117,11 @@ static int parser_parse_pipeline(parser_t * parser)
 
 static int parser_parse_str_more(parser_t * parser)
 {
+    token_t * backtrack = parser->token;
     // STR
     if (parser_match(parser, TOKEN_TYPE_STR)) {
+        parser->command->argv[parser->command->argc] = backtrack->aux;
+        parser->command->argc++;
         // <str-more>
         return parser_parse_str_more(parser);
     } else {
@@ -141,16 +151,19 @@ static int parser_parse_unary_pipe(parser_t * parser)
     // <maybe-fd>
     if (!parser_parse_maybe_fd(parser)) {
         parser->token = backtrack;
+        parser->error = "Expected possible file descriptor.";
         return 0;
     }
     // PIPE
     if (!parser_match(parser, TOKEN_TYPE_PIPE)) {
         parser->token = backtrack;
+        parser->error = "Expected '|'.";
         return 0;
     }
     // <maybe-fd>
     if (!parser_parse_maybe_fd(parser)) {
         parser->token = backtrack;
+        parser->error = "Expected possible file descriptor.";
         return 0;
     }
     return 1;
@@ -162,21 +175,25 @@ static int parser_parse_nary_pipe(parser_t * parser)
     // LT
     if (!parser_match(parser, TOKEN_TYPE_LT)) {
         parser->token = backtrack;
+        parser->error = "Expected '<'.";
         return 0;
     }
     // <unary-pipe>
     if (!parser_parse_unary_pipe(parser)) {
         parser->token = backtrack;
+        parser->error = "Expected valid pipe.";
         return 0;
     }
     // <nary-pipe-more>
     if (!parser_parse_nary_pipe_more(parser)) {
         parser->token = backtrack;
+        parser->error = "Expected valid pipe continuation.";
         return 0;
     }
     // GT
     if (!parser_match(parser, TOKEN_TYPE_GT)) {
         parser->token = backtrack;
+        parser->error = "Expected '>'.";
         return 0;
     }
     return 1;
